@@ -13,30 +13,8 @@ const lame_splitpath = ["bin", "lame"]
 # This will be filled out by __init__() for all products, as it must be done at runtime
 lame_path = ""
 
-# lame-specific global declaration
-function lame(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true)
-    global PATH, LIBPATH
-    env_mapping = Dict{String,String}()
-    if adjust_PATH
-        if !isempty(get(ENV, "PATH", ""))
-            env_mapping["PATH"] = string(PATH, ':', ENV["PATH"])
-        else
-            env_mapping["PATH"] = PATH
-        end
-    end
-    if adjust_LIBPATH
-        LIBPATH_base = get(ENV, LIBPATH_env, expanduser(LIBPATH_default))
-        if !isempty(LIBPATH_base)
-            env_mapping[LIBPATH_env] = string(LIBPATH, ':', LIBPATH_base)
-        else
-            env_mapping[LIBPATH_env] = LIBPATH
-        end
-    end
-    withenv(env_mapping...) do
-        f(lame_path)
-    end
-end
-
+lame(f::Function; adjust_PATH::Bool = true, adjust_LIBPATH::Bool = true) =
+    executable_wrapper(f, lame_path, PATH, LIBPATH, LIBPATH_env, LIBPATH_default, ':', adjust_PATH, adjust_LIBPATH)
 
 # Relative path to `libmp3lame`
 const libmp3lame_splitpath = ["lib", "libmp3lame.so"]
@@ -60,22 +38,14 @@ function __init__()
 
     # Initialize PATH and LIBPATH environment variable listings
     global PATH_list, LIBPATH_list
-    global lame_path = normpath(joinpath(artifact_dir, lame_splitpath...))
 
-    push!(PATH_list, dirname(lame_path))
-    global libmp3lame_path = normpath(joinpath(artifact_dir, libmp3lame_splitpath...))
+    global lame_path = get_exe_path!(PATH_list, artifact_dir, lame_splitpath)
 
-    # Manually `dlopen()` this right now so that future invocations
-    # of `ccall` with its `SONAME` will find this path immediately.
-    global libmp3lame_handle = dlopen(libmp3lame_path)
-    push!(LIBPATH_list, dirname(libmp3lame_path))
+    global libmp3lame_path, libmp3lame_handle
+    libmp3lame_path, libmp3lame_handle = get_lib_path_handle!(LIBPATH_list, artifact_dir, libmp3lame_splitpath)
 
-    # Filter out duplicate and empty entries in our PATH and LIBPATH entries
-    filter!(!isempty, unique!(PATH_list))
-    filter!(!isempty, unique!(LIBPATH_list))
-    global PATH = join(PATH_list, ':')
-    global LIBPATH = join(vcat(LIBPATH_list, [joinpath(Sys.BINDIR, Base.LIBDIR, "julia"), joinpath(Sys.BINDIR, Base.LIBDIR)]), ':')
-
+    global PATH, LIBPATH
+    PATH, LIBPATH = cleanup_path_libpath!(PATH_list, LIBPATH_list, ':')
     
 end  # __init__()
 
